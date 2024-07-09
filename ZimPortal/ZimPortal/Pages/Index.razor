@@ -1,0 +1,303 @@
+﻿@using Data;
+@using Models;
+@using Containers;
+@using System.Net.Http;
+@using System.Net.Http.Json;
+@using System.Collections.Generic;
+@using Newtonsoft.Json.Linq;
+@using ZimPortal.Services;
+@using System.Globalization
+
+@inject CachingContext Cache
+@inject FilterStateContainer FilterState
+@inject NavigationManager NavManager
+@inject IJSRuntime JsRuntime
+
+@page "/"
+
+<PageTitle>ZimPortal</PageTitle>
+
+
+<div class="banner-container">
+    <img loading="eager" decoding="auto" fetchpriority="high" src="/Images/banner.jpg" class="banner-img" style="opacity:1">
+    <div class="text-container">
+        <h1 class="banner-text" style="font-size:min(6vw, 2em)">Sulten? Find den bedste mad nær dig.</h1>
+    </div>
+    <div class="search-container">
+        <input type="text" id="adressSearch" role="combobox" data-toggle="dropdown" placeholder="Indtast placering" autocomplete="off" spellcheck="false" @bind-value="SearchTerm" @bind-value:event="oninput" @onblur="HideSuggestions" />
+        <div class="search-icon">
+            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 512 512"><path fill="currentColor" d="M256 32C167.67 32 96 96.51 96 176c0 128 160 304 160 304s160-176 160-304c0-79.49-71.67-144-160-144Zm0 224a64 64 0 1 1 64-64a64.07 64.07 0 0 1-64 64Z" /></svg>
+        </div>
+        <ul class="dropdown-menu" id="suggestions-dropdown" style="display: @(suggestions.Any() ? "block" : "none")">
+            @if (suggestions.Any()) {
+                @foreach (var suggestion in suggestions) {
+                    <li onmousedown="@(() => navigateClick(suggestion))">@suggestion.Key</li>
+                }
+            }
+        </ul>
+        <div class="location-container">
+            <button onclick="@GetLocation" id="CurrentLocationBtn">
+                <span><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"><path d="M9 12a3 3 0 1 0 6 0a3 3 0 1 0-6 0" /><path d="M4 12a8 8 0 1 0 16 0a8 8 0 1 0-16 0m8-10v2m0 16v2m8-10h2M2 12h2" /></g></svg></span>
+                Del Lokation
+            </button>
+        </div>
+    </div>
+</div>
+
+<div class="citylabel-container">
+    <h2 class="city-label" style="font-size:min(6vw, 2em)">Udforsk byer, som ZimSystem er i</h2>
+    
+</div>
+
+<div class="content">
+    <div class="city-container">
+        @foreach (string city in cities) {
+            // Make a button for each unique city
+            <button class="city-button" onclick="@(() => OnCityClick(city))">
+                @city
+                <span><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 1024 1024"><g transform="rotate(90 512 512)"><path fill="currentColor" d="m488.832 344.32l-339.84 356.672a32 32 0 0 0 0 44.16l.384.384a29.44 29.44 0 0 0 42.688 0l320-335.872l319.872 335.872a29.44 29.44 0 0 0 42.688 0l.384-.384a32 32 0 0 0 0-44.16L535.168 344.32a32 32 0 0 0-46.336 0" /></g></svg></span>
+                </button>            
+        }
+        
+    </div>
+</div>
+
+
+
+@code {
+
+
+    private double latitude;
+    private double longitude;
+
+    private async Task GetLocation() {
+
+        var location = await JsRuntime.InvokeAsync<GeoLocation>("HuliGeolocation.GetLocation");
+        latitude = Double.Parse(location.Latitude, CultureInfo.InvariantCulture);
+        longitude = Double.Parse(location.Longitude, CultureInfo.InvariantCulture);
+
+        await JsRuntime.InvokeVoidAsync("sessionStorage.clear");
+        await JsRuntime.InvokeVoidAsync("sessionStorage.setItem", "x_coord", longitude);
+        await JsRuntime.InvokeVoidAsync("sessionStorage.setItem", "y_coord", latitude);
+        NavManager.NavigateTo("/Restaurants");
+    }
+
+    public class GeoLocation {
+        public string Latitude { get; set; }
+        public string Longitude { get; set; }
+    }
+
+    public List<string> cities = new List<string>();
+
+    private Dictionary<string, double[]> suggestions = new Dictionary<string, double[]>();
+    private HttpClient httpClient = new HttpClient();
+
+    private string? searchTerm;
+    private string? SearchTerm {
+        get { return searchTerm; }
+        set {
+            searchTerm = value;
+            ShowSuggestions(searchTerm);
+        }
+    }
+
+    private async void ShowSuggestions(string searchTerm) {
+        if (!string.IsNullOrWhiteSpace(searchTerm) && searchTerm.Count() > 1) {
+            // Call async method to get suggestions
+            MergeDictionary(suggestions, await GetAdress(searchTerm));
+            MergeDictionary(suggestions, await GetPostal(searchTerm));
+            MergeDictionary(suggestions, await GetSupCity(searchTerm));
+            MergeDictionary(suggestions, await GetMunicipality(searchTerm));
+            suggestions = SortDictionary(suggestions, searchTerm);
+            StateHasChanged();
+        } else {
+            suggestions.Clear();
+            StateHasChanged();
+        }
+    }
+
+    static void MergeDictionary(Dictionary<string, double[]> destination, Dictionary<string, double[]> source) {
+        foreach (var kvp in source) {
+            if (destination.ContainsKey(kvp.Key)) {
+                destination[kvp.Key] = kvp.Value;
+            } else {
+                destination.Add(kvp.Key, kvp.Value);
+            }
+        }
+    }
+
+    private async Task HideSuggestions() {
+        suggestions.Clear();
+        StateHasChanged();
+    }
+
+    private async Task navigateClick(KeyValuePair<string, double[]> suggestion) {
+        await JsRuntime.InvokeVoidAsync("sessionStorage.clear");
+
+        await JsRuntime.InvokeVoidAsync("sessionStorage.setItem", "x_coord", suggestion.Value[0]);
+        await JsRuntime.InvokeVoidAsync("sessionStorage.setItem", "y_coord", suggestion.Value[1]);
+        await JsRuntime.InvokeVoidAsync("sessionStorage.setItem", "place", suggestion.Key);
+        NavManager.NavigateTo("/Restaurants");
+    }
+
+
+    private async Task<Dictionary<string, double[]>> GetAdress(string searchTerm) {
+        Dictionary<string, double[]> newSuggestions = new Dictionary<string, double[]>();
+
+        HttpResponseMessage response = await httpClient.GetAsync($"https://api.dataforsyningen.dk/adresser/autocomplete?q={searchTerm}");
+
+        if (response.IsSuccessStatusCode) {
+            // Read the JSON response as a string
+            string json = await response.Content.ReadAsStringAsync();
+
+            // Parse the JSON string using Newtonsoft.Json
+            JArray jsonArray = JArray.Parse(json);
+
+            // Convert the JArray to a list of Dictionary<string, object>
+            List<Dictionary<string, object>> data = jsonArray.ToObject<List<Dictionary<string, object>>>();
+
+            if (data != null) {
+                foreach (var item in data) {
+                    if (item.TryGetValue("tekst", out var tekst) && tekst is string tekstString) {
+                        double[] coords = new double[2];
+                        JObject adresse = (JObject)item["adresse"];
+                        coords[0] = Double.Parse(adresse.GetValue("x").ToString());
+                        coords[1] = Double.Parse(adresse.GetValue("y").ToString());
+                        if (!newSuggestions.ContainsKey(tekstString)) {
+                            newSuggestions.Add(tekstString, coords);
+                        }
+                    }
+                }
+            }
+        }
+
+        return newSuggestions;
+    }
+
+    private async Task<Dictionary<string, double[]>> GetPostal(string searchTerm) {
+        Dictionary<string, double[]> newSuggestions = new Dictionary<string, double[]>();
+
+        HttpResponseMessage response = await httpClient.GetAsync($"https://api.dataforsyningen.dk/postnumre/autocomplete?q={searchTerm}");
+
+        if (response.IsSuccessStatusCode) {
+            // Read the JSON response as a string
+            string json = await response.Content.ReadAsStringAsync();
+
+            // Parse the JSON string using Newtonsoft.Json
+            JArray jsonArray = JArray.Parse(json);
+
+            // Convert the JArray to a list of Dictionary<string, object>
+            List<Dictionary<string, object>> data = jsonArray.ToObject<List<Dictionary<string, object>>>();
+
+            if (data != null) {
+                foreach (var item in data) {
+                    if (item.TryGetValue("tekst", out var tekst) && tekst is string tekstString) {
+                        double[] coords = new double[2];
+                        JObject postnummer = (JObject)item["postnummer"];
+                        coords[0] = Double.Parse(postnummer.GetValue("visueltcenter_x").ToString());
+                        coords[1] = Double.Parse(postnummer.GetValue("visueltcenter_y").ToString());
+                        if (!newSuggestions.ContainsKey(tekstString)) {
+                            newSuggestions.Add(tekstString, coords);
+                        }
+                    }
+                }
+            }
+        }
+
+        return newSuggestions;
+    }
+
+    private async Task<Dictionary<string, double[]>> GetSupCity(string searchTerm) {
+        Dictionary<string, double[]> newSuggestions = new Dictionary<string, double[]>();
+
+        HttpResponseMessage response = await httpClient.GetAsync($"https://api.dataforsyningen.dk/supplerendebynavne2/autocomplete?q={searchTerm}");
+
+        if (response.IsSuccessStatusCode) {
+            // Read the JSON response as a string
+            string json = await response.Content.ReadAsStringAsync();
+
+            // Parse the JSON string using Newtonsoft.Json
+            JArray jsonArray = JArray.Parse(json);
+
+            // Convert the JArray to a list of Dictionary<string, object>
+            List<Dictionary<string, object>> data = jsonArray.ToObject<List<Dictionary<string, object>>>();
+
+            if (data != null) {
+                foreach (var item in data) {
+                    if (item.TryGetValue("tekst", out var tekst) && tekst is string tekstString) {
+                        double[] coords = new double[2];
+                        JObject supplerendebynavn = (JObject)item["supplerendebynavn"];
+                        JArray visueltcenter = (JArray)supplerendebynavn["visueltcenter"];
+                        coords[0] = visueltcenter[0].Value<double>();
+                        coords[1] = visueltcenter[1].Value<double>();
+                        if (!newSuggestions.ContainsKey(tekstString)) {
+                            newSuggestions.Add(tekstString, coords);
+                        }
+
+                    }
+                }
+            }
+        }
+
+        return newSuggestions;
+    }
+
+    private async Task<Dictionary<string, double[]>> GetMunicipality(string searchTerm) {
+        Dictionary<string, double[]> newSuggestions = new Dictionary<string, double[]>();
+
+        HttpResponseMessage response = await httpClient.GetAsync($"https://api.dataforsyningen.dk/kommuner/autocomplete?q={searchTerm}");
+
+        if (response.IsSuccessStatusCode) {
+            // Read the JSON response as a string
+            string json = await response.Content.ReadAsStringAsync();
+
+            // Parse the JSON string using Newtonsoft.Json
+            JArray jsonArray = JArray.Parse(json);
+
+            if (jsonArray != null) {
+                foreach (var item in jsonArray) {
+                    double[] coords = new double[2];
+                    JObject kommune = (JObject)item["kommune"];
+                    JArray visueltcenter = (JArray)kommune["visueltcenter"];
+                    coords[0] = visueltcenter[0].Value<double>();
+                    coords[1] = visueltcenter[1].Value<double>();
+                    if (!newSuggestions.ContainsKey(kommune.GetValue("navn").ToString())) {
+                        newSuggestions.Add(kommune.GetValue("navn").ToString(), coords);
+                    }
+                }
+            }
+        }
+
+        return newSuggestions;
+    }
+
+    private Dictionary<string, double[]> SortDictionary(Dictionary<string, double[]> dictionary, string keyword) {
+        var sortedList = dictionary.OrderByDescending(item => CalculateCloseness(item.Key, keyword)).ToList();
+        return sortedList.ToDictionary(kv => kv.Key, kv => kv.Value);
+    }
+
+    private double CalculateCloseness(string item, string keyword) {
+        return -Math.Abs(item.IndexOf(keyword, StringComparison.OrdinalIgnoreCase) - item.Length / 2.0);
+    }
+
+
+    protected override async Task OnInitializedAsync() {
+        foreach (Outlet outlet in Cache.GetCache()) {
+            if (!cities.Contains(outlet.City)) {
+                cities.Add(outlet.City);
+            }
+        }
+        cities.Sort();
+    }
+
+    async void OnCityClick(string city) {
+        // Remove other location settings if exists
+        await JsRuntime.InvokeVoidAsync("sessionStorage.clear");
+
+        // Set City
+        await JsRuntime.InvokeVoidAsync("sessionStorage.setItem", "city", city);
+        //Cookies.SetCookie("City", city, 60);
+        NavManager.NavigateTo("/Restaurants");
+    }
+
+}

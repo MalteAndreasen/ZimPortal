@@ -1,0 +1,377 @@
+﻿@using Data;
+@using Models;
+@using Containers;
+@using System;
+@using Microsoft.AspNetCore.Http;
+@using System.Globalization;
+@using ZimPortal.Services;
+
+@page "/Restaurants"
+@inject CachingContext Cache
+@inject FilterStateContainer FilterState
+@inject NavigationManager NavManager
+@inject IJSRuntime JsRuntime
+
+<PageTitle>Restaurants</PageTitle>
+
+<div class="content">
+    <h1 style="margin-top: 10vh;">Restauranter nær dig</h1>
+
+    @if (!hasLocation)
+    {
+        <div class="error-message-boundary">
+            <p>Ingen lokation sat. Gå tilbage til hovedsiden og søg efter lokation eller vælg en by.</p>
+        </div>
+    }
+
+    <!-- Filtre -->
+    <div class="filtermap-container">
+        <div class="@filterContainerClass">
+            <ul class="filter-list">
+                <li class="filter-li">
+                    <div class="filter-header-container">
+                        <div style="display: inline-block;">
+                            <button class="filter-button" onclick="@ShowFilters">@filterBtnContent</button>
+                        </div>
+                        <!-- Søgefelt -->
+                        <div class="restaurant-search-container">
+                            <input class="restaurant-searchbar" @bind-value="@SearchTerm"
+                            @bind-value:event="oninput" placeholder="Søg efter navn." />
+                        </div>
+                    </div>
+                </li>
+                @if (showFilters)
+                {
+                    <li class="filter-li">
+                        <label class="filter-label">
+                            Åben nu
+                        </label>
+                        <div class="filter-control">
+                            <label class="switch">
+                                <input type="checkbox" @bind="FilterState.Open" />
+                                <span class="slider round"></span>
+                            </label>
+                        </div>
+                    </li>
+                    @if (withCoords)
+                    {
+                        <li class="filter-li">
+                            <label class="filter-label">
+                                Afstand
+                            </label>
+                            <div class="filter-control" style="display: inline-block;">
+                                <input class="input-range" type="range" min="1" max="500" @bind-value="Distance" />
+                                <label style="transform: translateY(-15%);">@(FilterState.Distance + " km")</label>
+                            </div>
+                        </li>
+                    }
+                    <li class="filter-li">
+                        <label class="filter-label">Madtyper</label><br />
+                        @foreach (string foodType in foodTypes)
+                        {
+                            // Show foodtype buttons
+                            if (FilterState.FoodTypes().Contains(foodType))
+                            {
+                                <button class="foodtype-button-selected" onclick="@(() => AddOrRemoveFoodType(@foodType))">@foodType</button>
+                            }
+                            else
+                            {
+                                <button class="foodtype-button" onclick="@(() => AddOrRemoveFoodType(@foodType))">@foodType</button>
+                            }
+
+                        }
+                    </li>
+                }
+            </ul>
+        </div>
+
+        @if (hasCoords)
+        {
+            <!-- Button for toggling goes here -->
+            <div id="leafletmap" class="@mapStyleClass"></div>
+        }
+    </div>
+
+    <!-- Outlet liste -->
+    <div class="outlet-container">
+        @foreach (Outlet outlet in validOutlets)
+        {
+            // Make a card for each outlet
+            <RestaurantCard Name="@outlet.Name"
+                            Address="@outlet.Address"
+                            ImgB64="@outlet.ImageB64"
+                            PostalCode="@outlet.PostalCode"
+                            City="@outlet.City"
+                            Url="@outlet.Url" />
+        }
+    </div>
+
+</div>
+
+
+@code {
+    // Get from Session Storage
+    private string? city;
+    private double? x_coord;
+    private double? y_coord;
+
+    public List<Outlet> validOutlets = new List<Outlet>();
+
+    // Filter vars
+    private bool showFilters = false;
+    private string filterContainerClass = "filter-container-close";
+    private string filterBtnContent = "Vis filtre";
+    private List<string> foodTypes = new List<string>();
+
+    // Map vars
+    private bool hasCoords = true;
+    private bool showMap = true;
+    private string mapBtnContent = "Gem kort";
+    private string mapStyleClass = "map-container";
+
+    private bool hasLocation = false;
+    private bool withCoords = false;
+
+    private int Distance {
+        get { return FilterState.Distance; } 
+        set { 
+            FilterState.Distance = value;
+        }
+    }
+
+    private string? searchTerm = "";
+
+    private string? SearchTerm
+    {
+        get { return searchTerm; }
+        set
+        {
+            searchTerm = value;
+            validOutlets = FilterOutlets(Cache.GetCache());
+            if(searchTerm != "") FilterByText(searchTerm);
+        }
+    }
+
+
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+
+        if (firstRender)
+        {
+            city = await JsRuntime.InvokeAsync<string>("sessionStorage.getItem", "city");
+
+            x_coord = await JsRuntime.InvokeAsync<string>("sessionStorage.getItem", "x_coord") == null ? 
+                0 : Double.Parse(await JsRuntime.InvokeAsync<string>("sessionStorage.getItem", "x_coord"), 
+                        CultureInfo.InvariantCulture);
+
+            y_coord = await JsRuntime.InvokeAsync<string>("sessionStorage.getItem", "y_coord") == null ? 
+                0 : Double.Parse(await JsRuntime.InvokeAsync<string>("sessionStorage.getItem", "y_coord"), 
+                        CultureInfo.InvariantCulture);
+
+            if (x_coord != 0 && y_coord != 0) {
+                withCoords = true;
+            }
+            FilterState.OnChange += () => FilterChanged();
+            validOutlets = FilterOutlets(Cache.GetCache());
+
+            hasCoords = x_coord != 0 && y_coord != 0 ? true : false;
+            if (hasCoords)
+            {
+                await JsRuntime.InvokeVoidAsync("initLeafletMap", y_coord, x_coord);
+                await JsRuntime.InvokeVoidAsync("clearMarkers");
+                await JsRuntime.InvokeVoidAsync("addUserLocationMarker", y_coord, x_coord);
+                foreach (Outlet outlet in validOutlets)
+                {
+                    await JsRuntime.InvokeVoidAsync("addMarkerToMap",
+                        outlet.Latitude,
+                        outlet.Longitude,
+                        outlet.Name,
+                        outlet.Address,
+                        outlet.PostalCode
+                    );
+                }
+            }
+
+            foreach (Outlet outlet in Cache.GetCache())
+                foreach (string foodType in outlet.FoodTypes)
+                    if (!foodTypes.Contains(foodType)) foodTypes.Add(foodType);
+
+            StateHasChanged();
+        }
+
+        if (hasCoords)
+        {
+            await JsRuntime.InvokeVoidAsync("clearMarkers");
+            await JsRuntime.InvokeVoidAsync("addUserLocationMarker", y_coord, x_coord);
+            foreach (Outlet outlet in validOutlets)
+            {
+                await JsRuntime.InvokeVoidAsync("addMarkerToMap",
+                    outlet.Latitude,
+                    outlet.Longitude,
+                    outlet.Name,
+                    outlet.Address,
+                    outlet.PostalCode
+                );
+            }
+        }
+    }
+
+    private void FilterByText(string search)
+    {
+        validOutlets = validOutlets.Where(outlet => outlet.Name.ToLower().Contains(search.ToLower())).ToList();
+        StateHasChanged();
+    }
+
+    private void ShowFilters()
+    {
+        showFilters = !showFilters;
+        filterBtnContent = showFilters ? "Luk filtre" : "Vis filtre";
+        filterContainerClass = showFilters ? "filter-container" : "filter-container-close";
+    }
+
+
+
+    private void AddOrRemoveFoodType(string foodType)
+    {
+        if (FilterState.FoodTypes().Contains(foodType)) 
+            FilterState.RemoveFoodType(foodType);
+        else 
+            FilterState.AddFoodType(foodType);
+    }
+
+
+    private List<Outlet> FilterOutlets(List<Outlet> cache)
+    {
+        List<Outlet> valid = new List<Outlet>();
+
+        // Check whether we've got any actual location data in cookies before continuing
+        if (city == null && (x_coord == 0 && y_coord == 0))
+        {
+            hasLocation = false;
+            return valid;
+        }
+        else hasLocation = true;
+
+        // Filtrer ud fra lokation
+        for (int i = cache.Count - 1; i >= 0; i--)
+        {
+            if (cache[i].City == city)
+                valid.Add(cache[i]);
+            else if (x_coord != 0 && y_coord != 0)
+            {
+                double distance = CalculateDistance((double)x_coord, (double)y_coord, cache[i].Longitude, cache[i].Latitude);
+                if (distance <= FilterState.Distance)
+                    valid.Add(cache[i]);
+            }
+        }
+
+        // Filtrer ud fra åbningstider
+        for (int i = valid.Count - 1; i >= 0; i--)
+        {
+            Outlet outlet = valid[i];
+            if (FilterState.Open)
+            {
+                DateTime today = DateTime.Now;
+                if (outlet.TimeSlots.Count >= 1)
+                {
+                    TimeSlot ts1 = outlet.TimeSlots.Where(ts => ts.Weekday == (int)today.DayOfWeek).First();
+                    TimeSlot ts2 = outlet.TimeSlots.Where(ts => ts.Weekday == (int)today.DayOfWeek).Last();
+                    TimeSpan now = today.TimeOfDay;
+                    if (!(now >= ts1.Time && now <= ts2.Time))
+                    {
+                        valid.Remove(outlet);
+                        continue;
+                    }
+                }
+                else 
+                {
+                    valid.Remove(outlet);
+                    continue;
+                }
+            }
+
+            // FIltrer ud fra madtyper
+            if(FilterState.FoodTypes().Count >= 1)
+            {
+                foreach(string type in FilterState.FoodTypes())
+                {
+                    if(!outlet.FoodTypes.Contains(type))
+                    {
+                        valid.Remove(outlet);
+                        break;
+                    }
+                }
+            }
+        }
+        return valid;
+    }
+
+    private async void FilterChanged()
+    {
+        validOutlets = FilterOutlets(Cache.GetCache());
+        StateHasChanged();
+    }
+
+    private double CalculateDistance(double long1, double lat1, double long2, double lat2)
+    {
+        // Convert latitude and longitude from degrees to radians
+        lat1 = ToRadians(lat1);
+        long1 = ToRadians(long1);
+        lat2 = ToRadians(lat2);
+        long2 = ToRadians(long2);
+
+        // Haversine formula
+        double dlat = lat2 - lat1;
+        double dlon = long2 - long1;
+        double a = Math.Pow(Math.Sin(dlat / 2), 2) + Math.Cos(lat1) * Math.Cos(lat2) * Math.Pow(Math.Sin(dlon / 2), 2);
+        double c = 2 * Math.Atan2(Math.Sqrt(a), Math.Sqrt(1 - a));
+
+        // Radius of the Earth in kilometers
+        double radius = 6371;
+
+        // Calculate the distance
+        double distance = radius * c;
+
+        return distance;
+    }
+
+    private double ToRadians(double degrees)
+    {
+        return degrees * Math.PI / 180.0;
+    }
+
+    // JS calls for toggle button implementation for map and event handler
+    private async Task OpenMap()
+    {
+        showMap = !showMap;
+        mapBtnContent = showMap ? "Gem kort" : "Vis kort";
+        if (showMap)
+        {
+            mapStyleClass = "map-container";
+            await InitializeMapJs();
+            await PopulateMapJs();
+        }
+        else
+        {
+            await DestroyMapJs();
+            mapStyleClass = "map-container-hidden";
+        }
+    }
+
+    private async Task DestroyMapJs()
+    {
+        await JsRuntime.InvokeVoidAsync("destroyMap");
+    }
+
+    private async Task InitializeMapJs()
+    {
+
+    }
+
+    private async Task PopulateMapJs()
+    {
+
+    }
+}
+    

@@ -1,0 +1,85 @@
+﻿@inject IJSRuntime JS
+
+<nav class="navbar navbar-expand-md mb-4" style="background-color:rgba(0,0,0,0.88);background-color:rgba(0,0,0,0.64);backdrop-filter: blur(0.5rem);" id="navbar">
+    <div class="container-fluid" style=" flex-wrap: nowrap; overflow-x: auto;">
+        <a class="navbar-brand" href="">ZimPortal</a>
+        <div class="collapse nav-bar-collapse" style="flex-grow:0;">
+            <ul class="navbar-nav me-auto mb-2 mb-md-0" style="@menuStyle">
+            </ul>
+        </div>
+    </div>
+</nav>
+
+@code {
+    private static bool wideMode = true;
+    private static bool hideMenuBtnText = false;
+    private string menuStyle = "";
+    private string menuBtnStyle = "";
+    public event EventHandler<int> Resize;
+    private int browserWidth;
+    private int browserHeight;
+
+
+    private class BrowserDimensions
+    {
+        public int Width { get; set; }
+        public int Height { get; set; }
+    }
+
+    protected override async void OnInitialized()
+    {
+        menuStyle = "padding-right: 0.5rem; !important;padding-left: 0.5rem;!important;flex-direction: row;!important;margin-bottom: 0 !important;";
+        menuBtnStyle = "padding-right: min(1vw, 0.5rem);padding-left: min(1vw, 0.5rem;)"; // scale padding for better viewing on phone
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await JS.InvokeAsync<string>("resizeListener", DotNetObjectReference.Create(this));
+            Resize += UpdatedBrowserWidth;
+            BrowserDimensions dimensions = await JS.InvokeAsync<BrowserDimensions>("getWindowSize");
+            if (dimensions.Width <= 590)
+            {
+                hideMenuBtnText = true;
+                await InvokeAsync(() =>
+                {
+                    base.StateHasChanged();
+                });
+            }
+        }
+    }
+
+    [JSInvokable]
+    public void SetBrowserDimensions(int jsBrowserWidth, int jsBrowserHeight)
+    {
+        browserWidth = jsBrowserWidth;
+        browserHeight = jsBrowserHeight;
+        // For simplicity, we're just using the new width
+        this.Resize?.Invoke(this, jsBrowserWidth);
+    }
+
+
+    protected async void UpdatedBrowserWidth(object sender, int width)
+    {
+        if (!wideMode && width >= 1000)
+            wideMode = true;
+        else if (wideMode && width < 1000)
+            wideMode = false;
+
+        if (width <= 590)
+        {
+            hideMenuBtnText = true;
+        }
+        else
+        {
+            hideMenuBtnText = false;
+        }
+
+        // Rerender the picture
+        await InvokeAsync(() =>
+        {
+            base.StateHasChanged();
+        });
+    }
+}

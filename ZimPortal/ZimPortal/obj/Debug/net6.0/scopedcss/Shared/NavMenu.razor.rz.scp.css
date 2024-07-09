@@ -1,0 +1,77 @@
+.navbar-toggler[b-ro645ouwzg] {
+    background-color: rgba(255, 255, 255, 0.1);
+}
+
+.top-row[b-ro645ouwzg] {
+    height: 3.5rem;
+    background-color: rgba(0,0,0,0.4);
+}
+
+.navbar-brand[b-ro645ouwzg] {
+    font-size: min(3vw, 1.4rem);
+    border-radius: 0px;
+    padding-left: min(3vw, 1.1rem);
+    padding-right: min(3vw,1.1rem);
+    vertical-align: central;
+    font-family: "Montserrat", Helvetica, Arial, sans-serif;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    color: white;
+    font-weight: 600;
+}
+
+    .navbar-brand:active[b-ro645ouwzg] {
+        border-radius: 4px;
+        background-color: rgba(255,255,255,0.25);
+    }
+
+    .navbar-brand:hover[b-ro645ouwzg] {
+        border-radius: 4px;
+        background-color: rgba(255,255,255,0.25);
+    }
+
+.oi[b-ro645ouwzg] {
+    width: 2rem;
+    font-size: min(3vw,1.1rem);
+    vertical-align: text-top;
+    top: -2px;
+}
+
+.nav-item[b-ro645ouwzg] {
+    margin-top: 0.5rem;
+    margin-bottom: 0.5rem;
+    padding-bottom: 0.3rem;
+    padding-top: 0.3rem;
+    font-size: 0.9rem;
+    text-align: center;
+}
+
+    .nav-item[b-ro645ouwzg]  a {
+        color: #d7d7d7;
+        border-radius: 4px;
+        height: 3rem;
+        display: flex;
+        align-items: center;
+        line-height: 3rem;
+    }
+
+        .nav-item[b-ro645ouwzg]  a.active {
+            background-color: rgba(255,255,255,0.25);
+            color: white;
+        }
+
+        .nav-item[b-ro645ouwzg]  a:hover {
+            background-color: rgba(255,255,255,0.1);
+            color: white;
+        }
+
+@media (min-width: 1px) {
+    .navbar-toggler[b-ro645ouwzg] {
+        display: none;
+    }
+
+    .collapse[b-ro645ouwzg] {
+        /* Never collapse the sidebar for wide screens */
+        display: block;
+    }
+}

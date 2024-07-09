@@ -1,0 +1,89 @@
+﻿@page "/"
+@namespace ZimPortal.Pages
+@addTagHelper *, Microsoft.AspNetCore.Mvc.TagHelpers
+@{
+    Layout = "_Layout";
+}
+
+<component type="typeof(App)" render-mode="ServerPrerendered" />
+<script src="https://code.jquery.com/jquery-3.5.1.slim.min.js" integrity="sha384-DfXdz2htPH0lsSSs5nCTpuj/zy4C+OGpamoFVy38MVBnE+IbbVYUew+OrCXaRkfj" crossorigin="anonymous"></script>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+<script type="text/javascript">
+    function resizeListener(dotnethelper) {
+        $(window).resize(() => {
+            let browserHeight = $(window).innerHeight();
+            let browserWidth = $(window).innerWidth();
+            dotnethelper.invokeMethodAsync('SetBrowserDimensions', browserWidth, browserHeight).then(() => {
+                // success, do nothing
+            }).catch(error => {
+                console.log("Error during browser resize: " + error);
+            });
+        });
+    }
+
+    function getWindowSize()
+    {
+        return {
+            width: window.innerWidth,
+            height: window.innerHeight
+        };
+    };
+
+    window.HuliGeolocation =
+    {
+        GetLocation: () => {
+            var myPromise = new Promise((resolve, reject) => {
+
+                navigator.geolocation.getCurrentPosition(
+                    position => {
+
+                        let geoLocation = {
+                            Latitude: position.coords.latitude.toString(),
+                            Longitude: position.coords.longitude.toString()
+                        }
+                        resolve(geoLocation);
+                    },
+                    error => { reject(error) }
+                )
+            }).catch(error => error);
+
+            return myPromise;
+        },
+    };
+
+    // MAP FUNCTIONS
+    var map;
+    var markersLayer;
+    function initLeafletMap(latitude, longitude) {
+        map = L.map('leafletmap').setView([latitude, longitude], 10);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '&copy; OpenStreetMap contributors'
+        }).addTo(map);
+        
+        markersLayer = L.layerGroup().addTo(map);
+    }
+
+    function addUserLocationMarker(latitude, longitude) {
+        var marker = L.marker([latitude, longitude]).addTo(markersLayer);
+        marker.bindPopup("<b>Din valgte lokation</b><br />" + latitude + ", " + longitude).openPopup();
+    }
+
+    function addMarkerToMap(latitude, longitude, description, street, postnr) {
+        var marker = L.marker([latitude, longitude]).addTo(markersLayer);
+        marker.bindPopup("<b>" + description + "</b>" + 
+            "<br/>" + street + "<br/>" +
+            postnr);
+    }
+
+    function clearMarkers() {
+        markersLayer.clearLayers();
+    }
+
+    function destroyMap(){
+        if(map){
+            clearMarkers();
+            map.remove();
+        }
+    }
+</script>

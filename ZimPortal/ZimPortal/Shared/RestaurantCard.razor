@@ -1,0 +1,96 @@
+﻿
+<a href="@Url" style="text-decoration: none;">
+    <div class="card-wrapper">
+        <img class="card-img-header" src="data:img/png;base64,@ImgB64" />
+        <p class="card-info card-name">@Name</p>
+        <p class="card-info card-address">@Address</p>
+        <p class="card-info card-city">@PostalCode @City</p>
+    </div>
+</a>
+
+
+@code {
+    private string? _url;
+    [Parameter]
+    public string Url
+    {
+        get
+        {
+            return _url == null ? "" : _url;
+        }
+        set
+        {
+            _url = value;
+        }
+    }
+
+    private string? _name;
+    [Parameter]
+    public string Name 
+    {
+        get
+        {
+            return _name == null ? "No name" : _name;
+        } set
+        {
+            _name = value;
+        } 
+    }
+
+    private string? _address;
+    [Parameter]
+    public string Address 
+    { 
+        get
+        {
+            return _address == null ? "No address" : _address;
+        } 
+        set
+        {
+            _address = value;
+        }
+    }
+
+    private string? _city;
+    [Parameter]
+    public string City
+    {
+        get
+        {
+            return _city == null ? "No city" : _city;
+        }
+        set
+        {
+            _city = value;
+        }
+    }
+
+    private string? _postalCode;
+    [Parameter]
+    public string PostalCode
+    {
+        get
+        {
+            return _postalCode == null ? "No postal code" : _postalCode;
+        }
+        set
+        {
+            _postalCode = value;
+        }
+    }
+
+    private string _imgB64;
+    [Parameter]
+    public string ImgB64
+    {
+        get
+        {
+            return _imgB64 == null ? "No image please dont die website." : _imgB64;
+        }
+        set
+        {
+            _imgB64 = value;
+        }
+    }
+
+}
